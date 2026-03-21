@@ -6,7 +6,7 @@ local CCPKG_URL    = "https://raw.githubusercontent.com/wradley/cc-pkg/refs/head
 local CCPKG_BIN    = "/bin/cc-pkg"
 local SNIPPET_PATH = "/etc/cc-pkg/startup.lua"
 local STARTUP_PATH = "/startup.lua"
-local DOFILE_LINE  = 'dofile("/etc/cc-pkg/startup.lua")'
+local DOFILE_LINE  = 'shell.run("/etc/cc-pkg/startup.lua")'
 
 --------------------------------------------------------------------------------
 -- Helpers
