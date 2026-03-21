@@ -89,7 +89,14 @@ end
 shell.setCompletionFunction("bin/cc-pkg", function(shl, idx, text, prev)
   if idx == 1 then
     return complete({"fetch", "install", "list", "help"}, text)
-  elseif prev[1] == "install" then
+  end
+  -- Check if "install" appears anywhere in prev (guards against CC
+  -- including the program name in prev at different index positions).
+  local isInstall = false
+  for _, v in ipairs(prev) do
+    if v == "install" then isInstall = true; break end
+  end
+  if isInstall then
     if idx == 2 then
       return complete(packageNames(), text)
     else
@@ -116,4 +123,4 @@ end
 
 print("")
 print("Done! Reboot or run the following to apply now:")
-print('  dofile("' .. SNIPPET_PATH .. '")')
+print('  shell.run("' .. SNIPPET_PATH .. '")')
