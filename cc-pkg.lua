@@ -201,8 +201,18 @@ local function downloadPackage(manifest, force)
 end
 
 --------------------------------------------------------------------------------
--- /bin path warning
+-- Bin stub
 --------------------------------------------------------------------------------
+
+local function createBinStub(manifest)
+  local entryPath = installDest(manifest, manifest.bin)
+  local stubPath = "/bin/" .. manifest.name
+  local content = string.format('shell.run("%s", ...)\n', entryPath)
+  local ok, err = writeFile(stubPath, content)
+  if not ok then return false, err end
+  print("  bin stub -> " .. stubPath)
+  return true
+end
 
 local function warnIfNoBin()
   for dir in shell.path():gmatch("[^:]+") do
@@ -302,6 +312,16 @@ local function cmdInstall(name, opts)
     end
   end
 
+  -- create bin stub if manifest declares an entry point
+  if manifest.type == "program" and manifest.bin then
+    local ok5, err5 = createBinStub(manifest)
+    if not ok5 then
+      printError("Warning: could not create bin stub: " .. err5)
+    else
+      warnIfNoBin()
+    end
+  end
+
   if manifest.type == "program" and next(resolved) then
     print("")
     print("Add to your program's startup before requiring any deps:")
@@ -312,7 +332,6 @@ local function cmdInstall(name, opts)
         libBase, libBase
       ))
     end
-    warnIfNoBin()
   end
 
   print("")
