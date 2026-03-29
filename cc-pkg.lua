@@ -181,23 +181,41 @@ end
 -- File installation
 --------------------------------------------------------------------------------
 
+---Download all files for a package. Returns a list of failed-file records
+---{ dest, url, err } so callers can continue and report failures at the end.
+---Returns nil (empty) on "already installed" early-exit.
 local function downloadPackage(manifest, force)
   local base = installBase(manifest)
   if not force and fs.exists(base) then
-    return true, "already installed"
+    return nil  -- already installed, nothing to do
   end
+  local failed = {}
   for _, filePath in ipairs(manifest.files or {}) do
     local srcUrl = manifest.source_base .. "/" .. filePath
     local dest = installDest(manifest, filePath)
     local body, err = httpGet(srcUrl)
     if not body then
-      return false, "download failed (" .. filePath .. "): " .. err
+      failed[#failed + 1] = { dest = dest, url = srcUrl, err = err }
+    else
+      local ok, err2 = writeFile(dest, body)
+      if not ok then
+        failed[#failed + 1] = { dest = dest, url = srcUrl, err = err2 }
+      else
+        print("  + " .. dest)
+      end
     end
-    local ok, err2 = writeFile(dest, body)
-    if not ok then return false, "write failed (" .. dest .. "): " .. err2 end
-    print("  + " .. dest)
   end
-  return true
+  return failed
+end
+
+local function reportFailed(failed)
+  printError("")
+  printError(#failed .. " file(s) could not be installed:")
+  for _, f in ipairs(failed) do
+    printError("  " .. f.dest)
+    printError("    " .. f.err)
+    printError("    wget " .. f.url .. " " .. f.dest)
+  end
 end
 
 --------------------------------------------------------------------------------
@@ -283,23 +301,22 @@ local function cmdInstall(name, opts)
     return
   end
 
+  local allFailed = {}
+
   for _, item in ipairs(depQueue) do
     if fs.exists(installBase(item.manifest)) then
       print("  dep " .. item.name .. "@" .. item.version .. " (already installed)")
     else
       print("Installing dep " .. item.name .. "@" .. item.version)
-      local ok3, err3 = downloadPackage(item.manifest, false)
-      if not ok3 then
-        printError("Failed to install dep " .. item.name .. ": " .. err3)
-        return
-      end
+      local f = downloadPackage(item.manifest, false)
+      if f then for _, v in ipairs(f) do allFailed[#allFailed + 1] = v end end
     end
   end
 
   -- install root package
   print("Installing " .. manifest.name .. "@" .. manifest.version)
-  local ok4, err4 = downloadPackage(manifest, opts.force)
-  if not ok4 then printError(err4); return end
+  local f = downloadPackage(manifest, opts.force)
+  if f then for _, v in ipairs(f) do allFailed[#allFailed + 1] = v end end
 
   -- run install script if present
   if manifest.install_script then
@@ -334,6 +351,7 @@ local function cmdInstall(name, opts)
     end
   end
 
+  if #allFailed > 0 then reportFailed(allFailed) end
   print("")
   print("Installed " .. manifest.name .. "@" .. manifest.version .. ".")
 end
@@ -384,19 +402,19 @@ local function cmdInstallDeps(manifestPath, opts)
     return
   end
 
+  local allFailed = {}
+
   for _, item in ipairs(queue) do
     if fs.exists(installBase(item.manifest)) then
       print("  " .. item.name .. "@" .. item.version .. " (already installed)")
     else
       print("Installing " .. item.name .. "@" .. item.version)
-      local ok3, err6 = downloadPackage(item.manifest, false)
-      if not ok3 then
-        printError("Failed to install " .. item.name .. ": " .. err6)
-        return
-      end
+      local f = downloadPackage(item.manifest, false)
+      if f then for _, v in ipairs(f) do allFailed[#allFailed + 1] = v end end
     end
   end
 
+  if #allFailed > 0 then reportFailed(allFailed) end
   print("")
   print("Done.")
 end
