@@ -3,8 +3,12 @@ local WHC  = "https://raw.githubusercontent.com/wradley/cc-wh-controller/refs/he
 
 return {
   manifest_version = 1,
-  updated = 1774130098, -- Sat Mar 21 2026 14:54:58 GMT-0700 (Pacific Daylight Time)
+  updated = 1774870898, -- Mon Mar 30 2026 14:54:58 GMT-0700 (Pacific Daylight Time)
   packages = {
+    luaunit = {
+      latest = "3.4",
+      ["3.4"] = LIBS .. "/lib/luaunit/manifest.lua",
+    },
     log = {
       latest = "0.1.0",
       ["0.1.0"] = LIBS .. "/lib/log/manifest.lua",
