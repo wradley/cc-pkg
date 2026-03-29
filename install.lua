@@ -88,19 +88,25 @@ end
 
 shell.setCompletionFunction("bin/cc-pkg", function(shl, idx, text, prev)
   if idx == 1 then
-    return complete({"fetch", "install", "list", "help"}, text)
+    return complete({"fetch", "install", "install-deps", "list", "help"}, text)
   end
-  -- Check if "install" appears anywhere in prev (guards against CC
-  -- including the program name in prev at different index positions).
-  local isInstall = false
+
+  local cmd = nil
   for _, v in ipairs(prev) do
-    if v == "install" then isInstall = true; break end
+    if v == "install" or v == "install-deps" then cmd = v; break end
   end
-  if isInstall then
+
+  if cmd == "install" then
     if idx == 2 then
       return complete(packageNames(), text)
     else
       return complete({"-t", "--url", "--force"}, text)
+    end
+  elseif cmd == "install-deps" then
+    if idx == 2 then
+      return fs.complete(text, shl.dir(), true, false)
+    else
+      return complete({"--dev"}, text)
     end
   end
 end)
