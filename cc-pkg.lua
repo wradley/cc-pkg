@@ -338,6 +338,69 @@ local function cmdInstall(name, opts)
   print("Installed " .. manifest.name .. "@" .. manifest.version .. ".")
 end
 
+---Install deps (and optionally dev_deps) declared in a local manifest file.
+---Does not download the package itself — intended for dev/clone workflows.
+---@param manifestPath string  Path to a manifest.lua on this computer.
+---@param opts table           { dev: boolean }
+local function cmdInstallDeps(manifestPath, opts)
+  local src, err = readFile(manifestPath)
+  if not src then
+    printError("Cannot read manifest: " .. tostring(err))
+    return
+  end
+
+  local manifest, err2 = loadData(src, manifestPath)
+  if not manifest then
+    printError("Invalid manifest: " .. err2)
+    return
+  end
+
+  local registry, err3 = loadRegistry()
+  if not registry then
+    printError("Registry not found (" .. tostring(err3) .. "). Run 'cc-pkg fetch' first.")
+    return
+  end
+
+  local resolved = {}
+  local queue    = {}
+
+  local ok, err4 = collectDeps(manifest, registry, resolved, queue)
+  if not ok then
+    printError("Dependency resolution failed: " .. err4)
+    return
+  end
+
+  if opts.dev and next(manifest.dev_deps or {}) then
+    local devProxy = { name = manifest.name, deps = manifest.dev_deps }
+    local ok2, err5 = collectDeps(devProxy, registry, resolved, queue)
+    if not ok2 then
+      printError("Dev dependency resolution failed: " .. err5)
+      return
+    end
+  end
+
+  if #queue == 0 then
+    print("No dependencies to install.")
+    return
+  end
+
+  for _, item in ipairs(queue) do
+    if fs.exists(installBase(item.manifest)) then
+      print("  " .. item.name .. "@" .. item.version .. " (already installed)")
+    else
+      print("Installing " .. item.name .. "@" .. item.version)
+      local ok3, err6 = downloadPackage(item.manifest, false)
+      if not ok3 then
+        printError("Failed to install " .. item.name .. ": " .. err6)
+        return
+      end
+    end
+  end
+
+  print("")
+  print("Done.")
+end
+
 local function cmdList()
   local found = false
 
@@ -383,6 +446,10 @@ local function cmdHelp()
   print("    --force            Reinstall even if already")
   print("                       installed")
   print("  list               Show installed packages")
+  print("  install-deps <manifest>")
+  print("                     Install deps from a local")
+  print("                     manifest file (dev/clone use)")
+  print("    --dev              Also install dev_deps")
 end
 
 --------------------------------------------------------------------------------
@@ -404,6 +471,8 @@ local function parseArgs(args)
       result.flags.url = args[i]
     elseif a == "--force" then
       result.flags.force = true
+    elseif a == "--dev" then
+      result.flags.dev = true
     elseif a:sub(1, 1) ~= "-" and not result.name then
       result.name = a
     end
@@ -426,6 +495,12 @@ elseif cmd == "install" then
     printError("Usage: cc-pkg install <name> [-t <version>] [--url <url>] [--force]")
   else
     cmdInstall(parsed.name, parsed.flags)
+  end
+elseif cmd == "install-deps" then
+  if not parsed.name then
+    printError("Usage: cc-pkg install-deps <manifest-path> [--dev]")
+  else
+    cmdInstallDeps(parsed.name, parsed.flags)
   end
 elseif cmd == "list" then
   cmdList()
