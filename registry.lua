@@ -1,5 +1,6 @@
 local LIBS = "https://raw.githubusercontent.com/wradley/cc-tweaked-libraries/refs/heads/main" -- todo: replace with tags
 local WHC  = "https://raw.githubusercontent.com/wradley/cc-wh-controller/refs/heads/main"    -- todo: replace with tags
+local GCS  = "https://raw.githubusercontent.com/wradley/cc-global-sync/refs/heads/main"      -- todo: replace with tags
 
 return {
   manifest_version = 1,
@@ -20,6 +21,10 @@ return {
     ["wh-controller"] = {
       latest = "0.2.0",
       ["0.2.0"] = WHC .. "/manifest.lua",
+    },
+    ["inventory-coordinator"] = {
+      latest = "0.2.0",
+      ["0.2.0"] = GCS .. "/manifest.lua",
     },
   },
 }
