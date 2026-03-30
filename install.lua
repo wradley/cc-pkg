@@ -100,7 +100,7 @@ shell.setCompletionFunction("bin/cc-pkg", function(shl, idx, text, prev)
     if idx == 2 then
       return complete(packageNames(), text)
     else
-      return complete({"-t", "--url", "--force"}, text)
+      return complete({"-t", "--force"}, text)
     end
   elseif cmd == "install-deps" then
     if idx == 2 then

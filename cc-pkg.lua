@@ -82,29 +82,35 @@ local function loadRegistry()
   return loadData(body, "registry")
 end
 
----Resolve a package name + optional version to a manifest URL and resolved version.
----@return string|nil url
----@return string|nil err
+---Resolve a package name + optional version to a manifest URL, source_base, and resolved version.
+---@return string|nil manifestUrl
+---@return string|nil sourceBase
 ---@return string|nil resolvedVersion
-local function resolveManifestUrl(registry, name, version)
+---@return string|nil err
+local function resolvePackageEntry(registry, name, version)
   local pkg = registry.packages[name]
-  if not pkg then return nil, "unknown package: " .. name end
+  if not pkg then return nil, nil, nil, "unknown package: " .. name end
   local ver = version or pkg.latest
-  if not ver then return nil, "no latest version for: " .. name end
-  local url = pkg[ver]
-  if not url then return nil, name .. " version not found: " .. ver end
-  return url, nil, ver
+  if not ver then return nil, nil, nil, "no latest version for: " .. name end
+  local entry = pkg[ver]
+  if not entry then return nil, nil, nil, name .. " version not found: " .. ver end
+  local manifestUrl = entry.manifest
+  if manifestUrl:sub(1, 4) ~= "http" then
+    manifestUrl = entry.source_base .. "/" .. manifestUrl
+  end
+  return manifestUrl, entry.source_base, ver, nil
 end
 
 --------------------------------------------------------------------------------
 -- Manifests
 --------------------------------------------------------------------------------
 
-local function fetchManifest(url)
+local function fetchManifest(url, sourceBase)
   local body, err = httpGet(url)
   if not body then return nil, "manifest fetch failed: " .. err end
   local m, err2 = loadData(body, "manifest")
   if not m then return nil, "invalid manifest: " .. err2 end
+  m.source_base = sourceBase
   return m
 end
 
@@ -157,13 +163,13 @@ local function collectDeps(manifest, registry, resolved, queue)
           depName
         )
       end
-      local url, err, ver = resolveManifestUrl(registry, depName, depInfo.version)
-      if not url then return false, "dep " .. depName .. ": " .. err end
+      local manifestUrl, sourceBase, ver, err = resolvePackageEntry(registry, depName, depInfo.version)
+      if not manifestUrl then return false, "dep " .. depName .. ": " .. err end
 
       -- mark before recursing to prevent infinite loops on circular deps
-      resolved[depName] = { version = ver, url = url }
+      resolved[depName] = { version = ver, url = manifestUrl }
 
-      local depManifest, err2 = fetchManifest(url)
+      local depManifest, err2 = fetchManifest(manifestUrl, sourceBase)
       if not depManifest then return false, "dep " .. depName .. ": " .. err2 end
 
       -- recurse into dep's own deps before enqueuing it (deps first)
@@ -191,8 +197,15 @@ local function downloadPackage(manifest, force)
   end
   local failed = {}
   for _, filePath in ipairs(manifest.files or {}) do
-    local srcUrl = manifest.source_base .. "/" .. filePath
-    local dest = installDest(manifest, filePath)
+    local srcUrl, relPath
+    if filePath:sub(1, 4) == "http" then
+      srcUrl  = filePath
+      relPath = filePath:match("([^/]+)$") or filePath
+    else
+      srcUrl  = manifest.source_base .. "/" .. filePath
+      relPath = filePath
+    end
+    local dest = installDest(manifest, relPath)
     local body, err = httpGet(srcUrl)
     if not body then
       failed[#failed + 1] = { dest = dest, url = srcUrl, err = err }
@@ -252,38 +265,24 @@ local function cmdFetch()
 end
 
 local function cmdInstall(name, opts)
-  -- opts: { version, url, force }
+  -- opts: { version, force }
 
-  local registry
-
-  if opts.url then
-    -- with --url, use cached registry for dep resolution (may be nil if absent)
-    registry = loadRegistry()
-  else
-    -- without --url, always freshen the registry first
-    local ok, err = fetchRegistry()
-    if not ok then
-      printError("Could not fetch registry: " .. err)
-      return
-    end
-    registry, _ = loadRegistry()
-    if not registry then
-      printError("Registry unavailable after fetch — this should not happen.")
-      return
-    end
+  local ok, err = fetchRegistry()
+  if not ok then
+    printError("Could not fetch registry: " .. err)
+    return
+  end
+  local registry = loadRegistry()
+  if not registry then
+    printError("Registry unavailable after fetch — this should not happen.")
+    return
   end
 
-  -- resolve manifest URL for the root package
-  local rootUrl = opts.url
-  if not rootUrl then
-    local url, err = resolveManifestUrl(registry, name, opts.version)
-    if not url then printError(err); return end
-    rootUrl = url
-  end
+  local manifestUrl, sourceBase, _, err2 = resolvePackageEntry(registry, name, opts.version)
+  if not manifestUrl then printError(err2); return end
 
-  -- fetch root manifest
-  local manifest, err = fetchManifest(rootUrl)
-  if not manifest then printError(err); return end
+  local manifest, err3 = fetchManifest(manifestUrl, sourceBase)
+  if not manifest then printError(err3); return end
 
   -- check already installed
   if not opts.force and fs.exists(installBase(manifest)) then
@@ -459,8 +458,6 @@ local function cmdHelp()
   print("  install <name>     Install a package (fetches")
   print("                     registry first)")
   print("    -t <version>       Install a specific version")
-  print("    --url <url>        Install from a manifest URL")
-  print("                       directly")
   print("    --force            Reinstall even if already")
   print("                       installed")
   print("  list               Show installed packages")
@@ -484,9 +481,6 @@ local function parseArgs(args)
     elseif a == "-t" then
       i = i + 1
       result.flags.version = args[i]
-    elseif a == "--url" then
-      i = i + 1
-      result.flags.url = args[i]
     elseif a == "--force" then
       result.flags.force = true
     elseif a == "--dev" then
@@ -510,7 +504,7 @@ if cmd == "fetch" then
   cmdFetch()
 elseif cmd == "install" then
   if not parsed.name then
-    printError("Usage: cc-pkg install <name> [-t <version>] [--url <url>] [--force]")
+    printError("Usage: cc-pkg install <name> [-t <version>] [--force]")
   else
     cmdInstall(parsed.name, parsed.flags)
   end
